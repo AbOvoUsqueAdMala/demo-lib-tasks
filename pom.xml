@@ -16,8 +16,6 @@
         <java.version>21</java.version>
         <db-scheduler.version>16.12.0</db-scheduler.version>
         <wiremock.version>3.13.1</wiremock.version>
-        <extension.kz.expected>true</extension.kz.expected>
-        <extension.az.expected>false</extension.az.expected>
         <orders-extension-kz.version>1.0.0-SNAPSHOT</orders-extension-kz.version>
     </properties>
     <modules>
@@ -57,12 +55,6 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
-                    <configuration>
-                        <systemPropertyVariables>
-                            <extension.kz.expected>${extension.kz.expected}</extension.kz.expected>
-                            <extension.az.expected>${extension.az.expected}</extension.az.expected>
-                        </systemPropertyVariables>
-                    </configuration>
                     <executions>
                         <execution>
                             <goals><goal>integration-test</goal><goal>verify</goal></goals>
