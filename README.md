@@ -5,6 +5,34 @@
 предоставляет db-scheduler со Spring Boot Starter. Собственных executor, очередей,
 планировщиков и фоновых relay-процессов нет.
 
+## Репозитории и получение исходников
+
+Библиотеки вынесены в самостоятельные публичные репозитории:
+
+- [orders-extension-kz](https://github.com/AbOvoUsqueAdMala/orders-extension-kz)
+- [orders-extension-az](https://github.com/AbOvoUsqueAdMala/orders-extension-az)
+
+Демо фиксирует их версии исходников через Git submodules. Клонируйте вместе с ними:
+
+```shell
+git clone --recurse-submodules https://github.com/AbOvoUsqueAdMala/demo-lib-tasks.git
+cd demo-lib-tasks
+```
+
+Для уже существующего checkout:
+
+```shell
+git submodule update --init --recursive
+```
+
+Если эти каталоги раньше содержали обычные файлы, сохраните или закоммитьте свои
+локальные изменения перед обновлением структуры репозитория.
+
+Отдельный Git-репозиторий и Maven-модуль — разные понятия: в демо обе библиотеки
+остаются модулями общего Maven reactor, хотя исходники и история принадлежат
+разным репозиториям. Поэтому прежние команды сборки и подсветка в IDEA сохраняются.
+В другом проекте достаточно Maven-зависимостей; включать submodules не обязательно.
+
 ## Запуск
 
 Нужны JDK 21, Maven 3.6.3+ и работающий Docker с Linux-контейнерами.
@@ -100,10 +128,16 @@ Maven разрешает их зависимости через локальны
 исходников библиотеки в рабочем каталоге не будут учтены. Если подходящего артефакта
 нет, сборка завершится ошибкой разрешения зависимости.
 
-Версия библиотек автоматически не увеличивается: сейчас они наследуют
-`1.0.0-SNAPSHOT` из корневого `pom.xml`. Изменение исходников и пересборка обновляют
-содержимое JAR с той же версией. Для разработки менять версию после каждой правки
-не требуется; новую версию перед выпуском задают явно.
+Версии библиотек автоматически не увеличиваются: каждая задаёт
+`1.0.0-SNAPSHOT` в собственном `pom.xml` с родителем Spring Boot.
+В демо версии зависимостей задаются отдельно свойствами
+`orders-extension-kz.version` и `orders-extension-az.version`.
+Изменение исходников и пересборка обновляют содержимое JAR с той же версией.
+При выпуске новой версии библиотеки обновите и соответствующее свойство демо.
+
+Если библиотека находится в отдельном checkout вне текущего reactor, сначала
+выполните в её каталоге `mvn clean install`, затем пересоберите приложение.
+Один `-am` не собирает исходники из произвольных внешних Git-репозиториев.
 
 После успешной сборки заново запустите приложение:
 
@@ -189,7 +223,7 @@ orders-extension-kz/
     tasks/
     config/
   src/main/resources/
-    db/migration/extension/kz/
+    orders-extension-kz/db/migration/
     META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
 orders-extension-az/
   src/main/java/com/example/extension/az/
@@ -201,7 +235,7 @@ orders-extension-az/
     tasks/
     config/
   src/main/resources/
-    db/migration/extension/az/
+    orders-extension-az/db/migration/
     META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
 wiremock/mappings/
 compose.yml
@@ -283,8 +317,8 @@ HTTP-вызов и commit PostgreSQL не являются распределё�
 | Владелец | Схема PostgreSQL | Путь миграций | Таблица истории |
 |---|---|---|---|
 | Приложение | app | classpath:db/migration/app | app.app_schema_history |
-| KZ | orders_extension | classpath:db/migration/extension/kz | orders_extension.extension_schema_history |
-| AZ | orders_extension_az | classpath:db/migration/extension/az | orders_extension_az.az_schema_history |
+| KZ | orders_extension | classpath:orders-extension-kz/db/migration | orders_extension.extension_schema_history |
+| AZ | orders_extension_az | classpath:orders-extension-az/db/migration | orders_extension_az.az_schema_history |
 
 В каждой схеме свои `V1` без конфликта версий. Общая очередь
 `app.scheduled_tasks` создаётся миграцией приложения `V2`.
@@ -295,6 +329,11 @@ Flyway приложения и выбранных расширений запу�
 
 На новой базе создаются только схемы выбранных расширений. Без обоих профилей
 в приложении нет их классов, миграций, Entity, Repository, обработчиков и REST API.
+
+Ресурсы библиотек размещены вне стандартного `classpath:db/migration`,
+поэтому Flyway другого приложения не подбирает их как собственные миграции.
+Автоконфигурация расширений сохраняет стандартный Flyway приложения и добавляет
+свои инициализаторы после его автоконфигурации.
 
 У KZ сохранены схема `orders_extension`, таблицы, история Flyway и миграция V1
 прежнего модуля `orders-extension`. Переименование Maven-артефакта и Java-пакета
@@ -311,13 +350,22 @@ Flyway приложения и выбранных расширений запу�
 
 Профиль `extension-kz` добавляет зависимость `orders-extension-kz` в `demo-app`,
 а `extension-az` — `orders-extension-az`. Библиотеки независимы друг от друга
-и не зависят от приложения. Для установки артефактов в локальный Maven:
+и не зависят от приложения или его родительского POM. Каждая собирается отдельно:
+
+```shell
+mvn -f orders-extension-kz/pom.xml clean install
+mvn -f orders-extension-az/pom.xml clean install
+```
+
+Эти команды работают и в независимо клонированных репозиториях. Для установки
+артефактов из общего reactor демо:
 
 ```shell
 mvn "-Pextension-kz,extension-az" clean install -DskipTests
 ```
 
-В другом совместимом Spring Boot-приложении добавьте нужную зависимость или обе:
+В другом совместимом Spring Boot-приложении добавьте нужную зависимость или обе
+после установки библиотек в локальный Maven:
 
 ```xml
 <dependency>
@@ -334,9 +382,32 @@ mvn "-Pextension-kz,extension-az" clean install -DskipTests
 
 Автоконфигурация импортирует сервисы, контроллер, task beans, JPA Entity и Repository
 библиотеки без `@ComponentScan` в её пакеты и без ручного изменения приложения.
-Нужны PostgreSQL DataSource, JPA, Flyway и таблица общего db-scheduler.
-В демо их предоставляет `demo-app`. Имя таблицы очереди задаётся общим
-`db-scheduler.table-name`; отдельный Scheduler библиотека не создаёт.
+Нужны PostgreSQL DataSource, JDBC-драйвер PostgreSQL и таблица общего db-scheduler.
+В демо их предоставляет `demo-app`. В другом приложении создайте таблицу своей
+Flyway-миграцией; SQL есть в `docs/scheduled_tasks.sql` каждого репозитория.
+Имя таблицы задаётся общим `db-scheduler.table-name`; отдельный Scheduler
+библиотека не создаёт. JPA, MVC, Flyway и db-scheduler starter приходят транзитивно.
+Минимальные свойства и HTTP-контракты описаны в README каждой библиотеки.
+
+GitHub хранит исходники, а Maven получает зависимости из Maven-репозитория.
+Для сборки на другой машине также выполните `mvn install` библиотек либо
+опубликуйте их JAR и POM через `mvn deploy` в Nexus/Artifactory вашей организации.
+Само создание GitHub-репозитория не публикует артефакт в Maven Central.
+
+Изменения библиотек коммитятся и отправляются в их собственные репозитории.
+После этого в демо зафиксируйте новые указатели submodules:
+
+```shell
+git -C orders-extension-kz add .
+git -C orders-extension-kz commit -m "Update KZ extension"
+git -C orders-extension-kz push origin HEAD:main
+git add orders-extension-kz
+git commit -m "Update KZ submodule"
+```
+
+Для AZ используйте соответствующий каталог. При получении изменений демо выполните
+`git submodule update --init --recursive`, чтобы взять именно зафиксированные
+коммиты библиотек.
 
 ## IntelliJ IDEA
 
@@ -377,6 +448,15 @@ KZ и AZ используют свойства `orders.extension.kz.base-url` и
 При увеличении числа потоков согласуйте пул БД и возможности внешних систем.
 
 ## Проверки
+
+Независимые проверки библиотек (каждая с собственным тестовым приложением):
+
+```shell
+mvn -f orders-extension-kz/pom.xml clean verify
+mvn -f orders-extension-az/pom.xml clean verify
+```
+
+Проверки приложения во всех сочетаниях зависимостей:
 
 ```shell
 mvn clean verify

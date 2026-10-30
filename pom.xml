@@ -18,6 +18,8 @@
         <wiremock.version>3.13.1</wiremock.version>
         <extension.kz.expected>false</extension.kz.expected>
         <extension.az.expected>false</extension.az.expected>
+        <orders-extension-kz.version>1.0.0-SNAPSHOT</orders-extension-kz.version>
+        <orders-extension-az.version>1.0.0-SNAPSHOT</orders-extension-az.version>
     </properties>
     <modules>
         <module>orders-extension-kz</module>
@@ -34,12 +36,12 @@
             <dependency>
                 <groupId>com.example</groupId>
                 <artifactId>orders-extension-kz</artifactId>
-                <version>${project.version}</version>
+                <version>${orders-extension-kz.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.example</groupId>
                 <artifactId>orders-extension-az</artifactId>
-                <version>${project.version}</version>
+                <version>${orders-extension-az.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
