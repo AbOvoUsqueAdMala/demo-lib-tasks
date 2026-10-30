@@ -27,9 +27,15 @@
     </build>
     <profiles>
         <profile>
-            <id>extension</id>
+            <id>extension-kz</id>
             <dependencies>
-                <dependency><groupId>com.example</groupId><artifactId>orders-extension</artifactId></dependency>
+                <dependency><groupId>com.example</groupId><artifactId>orders-extension-kz</artifactId></dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>extension-az</id>
+            <dependencies>
+                <dependency><groupId>com.example</groupId><artifactId>orders-extension-az</artifactId></dependency>
             </dependencies>
         </profile>
     </profiles>

@@ -1,4 +1,4 @@
-name: Verify both distributions
+name: Verify all distributions
 
 on:
   push:
@@ -12,8 +12,12 @@ jobs:
         include:
           - distribution: base
             maven-options: ""
-          - distribution: extension
-            maven-options: "-Pextension"
+          - distribution: kz
+            maven-options: "-Pextension-kz"
+          - distribution: az
+            maven-options: "-Pextension-az"
+          - distribution: kz-az
+            maven-options: "-Pextension-kz,extension-az"
     name: ${{ matrix.distribution }}
     steps:
       - uses: actions/checkout@v4

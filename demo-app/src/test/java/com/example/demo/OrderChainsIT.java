@@ -50,7 +50,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
 class OrderChainsIT {
-	private static final boolean EXTENSION = Boolean.getBoolean("extension.expected");
+	private static final List<Extension> EXTENSIONS = List.of(
+			new Extension("kz", "Kz", "orders_extension", "extension_orders",
+					"extension_schema_history", Boolean.getBoolean("extension.kz.expected")),
+			new Extension("az", "Az", "orders_extension_az", "extension_az_orders",
+					"az_schema_history", Boolean.getBoolean("extension.az.expected")));
 	@Container
 	private static final PostgreSQLContainer<?> POSTGRES =
 			new PostgreSQLContainer<>("postgres:17.6-alpine");
@@ -76,37 +80,26 @@ class OrderChainsIT {
 				var statement = connection.createStatement()) {
 			statement.execute("DROP SCHEMA IF EXISTS app CASCADE");
 			statement.execute("DROP SCHEMA IF EXISTS orders_extension CASCADE");
+			statement.execute("DROP SCHEMA IF EXISTS orders_extension_az CASCADE");
 		}
 	}
 
 	@Test
-	void profileControlsClassesHandlersMigrationsAndPackagedJar() throws Exception {
+	void profilesControlClassesHandlersMigrationsAndPackagedJar() throws Exception {
 		try (var context = start()) {
-			assertThat(ClassUtils.isPresent(
-					"com.example.extension.config.OrdersExtensionAutoConfiguration",
-					context.getClassLoader())).isEqualTo(EXTENSION);
 			assertThat(context.getBeansOfType(Scheduler.class)).hasSize(1);
-			assertThat(context.getBeansOfType(Task.class)).hasSize(EXTENSION ? 6 : 3);
+			var tasks = context.getBeansOfType(Task.class).values();
+			assertThat(tasks).hasSize(systems().size() * 3);
+			assertThat(tasks).extracting(task -> task.getName()).doesNotHaveDuplicates();
 			JdbcTemplate database = context.getBean(JdbcTemplate.class);
 			assertThat(database.queryForObject(
 					"SELECT count(*) FROM app.app_schema_history WHERE success", Integer.class))
 					.isEqualTo(3);
-			assertThat(database.queryForObject(
-					"SELECT count(*) FROM information_schema.schemata "
-							+ "WHERE schema_name = 'orders_extension'", Integer.class))
-					.isEqualTo(EXTENSION ? 1 : 0);
-			if (EXTENSION) {
-				assertThat(database.queryForObject("SELECT count(*) FROM "
-						+ "orders_extension.extension_schema_history WHERE success", Integer.class))
-						.isEqualTo(2);
-			} else {
-				assertThat(client(context).post().uri("/api/extension/orders")
-						.body(Map.of("description", "Unavailable")).<Integer>exchange(
-								(request, response) -> response.getStatusCode().value()))
-						.isEqualTo(404);
+			for (Extension extension : EXTENSIONS) {
+				assertExtensionConfiguration(context, extension);
 			}
 		}
-		assertPackagedExtension();
+		assertPackagedExtensions();
 	}
 
 	@Test
@@ -227,8 +220,7 @@ class OrderChainsIT {
 					invokeState(context, system, "create", "Rolled back");
 					status.setRollbackOnly();
 				});
-				assertThat(count(context, system.equals("main")
-						? "app.orders" : "orders_extension.extension_orders")).isZero();
+				assertThat(count(context, ordersTable(system))).isZero();
 				assertThat(count(context, "app.scheduled_tasks")).isZero();
 			}
 		}
@@ -268,9 +260,7 @@ class OrderChainsIT {
 				pending.add(create(client(context), system));
 				OrderLocation progressed = create(client(context), system);
 				pending.add(progressed);
-				String workflowClass = system.equals("main")
-						? "com.example.demo.service.OrderWorkflow"
-						: "com.example.extension.service.ExtensionOrderWorkflow";
+				String workflowClass = systemType(system, "service", "OrderWorkflow");
 				Object workflow = context.getBean(
 						ClassUtils.resolveClassName(workflowClass, context.getClassLoader()));
 				ReflectionTestUtils.invokeMethod(workflow, "execute", progressed.id(),
@@ -324,7 +314,8 @@ class OrderChainsIT {
 				"--spring.datasource.username=" + POSTGRES.getUsername(),
 				"--spring.datasource.password=" + POSTGRES.getPassword(),
 				"--orders.base-url=" + WIREMOCK.baseUrl(),
-				"--orders.extension.base-url=" + WIREMOCK.baseUrl(),
+				"--orders.extension.kz.base-url=" + WIREMOCK.baseUrl(),
+				"--orders.extension.az.base-url=" + WIREMOCK.baseUrl(),
 				"--orders.retry-delay=100ms",
 				"--db-scheduler.polling-interval=100ms",
 				"--db-scheduler.heartbeat-interval=200ms",
@@ -345,7 +336,7 @@ class OrderChainsIT {
 	}
 
 	private OrderLocation create(RestClient client, String system) {
-		String endpoint = system.equals("main") ? "/api/orders" : "/api/extension/orders";
+		String endpoint = endpoint(system);
 		var response = client.post().uri(endpoint).body(Map.of("description", "Demo order"))
 				.retrieve().toEntity(OrderView.class);
 		assertThat(response.getStatusCode().value()).isEqualTo(202);
@@ -396,9 +387,7 @@ class OrderChainsIT {
 
 	private Object invokeState(ConfigurableApplicationContext context, String system,
 			String method, Object... arguments) {
-		String serviceClass = system.equals("main")
-				? "com.example.demo.service.OrderStateService"
-				: "com.example.extension.service.ExtensionOrderStateService";
+		String serviceClass = systemType(system, "service", "OrderStateService");
 		Object service = context.getBean(
 				ClassUtils.resolveClassName(serviceClass, context.getClassLoader()));
 		return ReflectionTestUtils.invokeMethod(service, method, arguments);
@@ -411,9 +400,8 @@ class OrderChainsIT {
 	}
 
 	private Class<?> stepClass(ConfigurableApplicationContext context, String system) {
-		return ClassUtils.resolveClassName(system.equals("main")
-				? "com.example.demo.tasks.OrderStep"
-				: "com.example.extension.tasks.ExtensionOrderStep", context.getClassLoader());
+		return ClassUtils.resolveClassName(
+				systemType(system, "tasks", "OrderStep"), context.getClassLoader());
 	}
 
 	private void assertOverlappingRegistrations(String system) {
@@ -433,21 +421,94 @@ class OrderChainsIT {
 				.queryForObject("SELECT count(*) FROM " + table, Long.class);
 	}
 
-	private void assertPackagedExtension() throws Exception {
+	private void assertPackagedExtensions() throws Exception {
 		try (var archive = new ZipFile("target/demo-app-1.0.0-SNAPSHOT.jar")) {
 			var libraries = archive.stream().map(entry -> entry.getName()).toList();
-			assertThat(libraries.stream().anyMatch(name ->
-					name.startsWith("BOOT-INF/lib/orders-extension-"))).isEqualTo(EXTENSION);
+			for (Extension extension : EXTENSIONS) {
+				assertThat(libraries.stream().anyMatch(name -> name.startsWith(
+						"BOOT-INF/lib/orders-extension-" + extension.country() + "-")))
+						.as("Packaged extension %s", extension.country()).isEqualTo(extension.enabled());
+			}
 			assertThat(libraries).noneMatch(name -> name.contains("wiremock"));
 		}
 	}
 
+	private void assertExtensionConfiguration(
+			ConfigurableApplicationContext context, Extension extension) {
+		assertThat(ClassUtils.isPresent(extension.type("config", "OrdersAutoConfiguration"),
+				context.getClassLoader())).isEqualTo(extension.enabled());
+		JdbcTemplate database = context.getBean(JdbcTemplate.class);
+		assertThat(database.queryForObject(
+				"SELECT count(*) FROM information_schema.schemata WHERE schema_name = ?",
+				Integer.class, extension.schema())).isEqualTo(extension.enabled() ? 1 : 0);
+		if (extension.enabled()) {
+			assertThat(database.queryForObject("SELECT count(*) FROM " + extension.schema()
+					+ "." + extension.historyTable() + " WHERE success", Integer.class)).isEqualTo(2);
+		} else {
+			assertThat(client(context).post().uri(endpoint(extension.country()))
+					.body(Map.of("description", "Unavailable")).<Integer>exchange(
+							(request, response) -> response.getStatusCode().value())).isEqualTo(404);
+		}
+		if (extension.country().equals("kz")) {
+			assertLegacyKzRoute(context, extension.enabled());
+		}
+	}
+
+	private void assertLegacyKzRoute(ConfigurableApplicationContext context, boolean enabled) {
+		if (enabled) {
+			OrderLocation order = create(client(context), "kz");
+			OrderView legacy = client(context).get().uri("/api/extension/orders/" + order.id())
+					.retrieve().body(OrderView.class);
+			assertThat(legacy.id()).isEqualTo(order.id());
+		} else {
+			assertThat(client(context).post().uri("/api/extension/orders")
+					.body(Map.of("description", "Unavailable")).<Integer>exchange(
+							(request, response) -> response.getStatusCode().value())).isEqualTo(404);
+		}
+	}
+
 	private List<String> systems() {
-		return EXTENSION ? List.of("main", "extension") : List.of("main");
+		List<String> systems = new ArrayList<>(List.of("main"));
+		EXTENSIONS.stream().filter(Extension::enabled).map(Extension::country).forEach(systems::add);
+		return systems;
+	}
+
+	private Extension extension(String country) {
+		return EXTENSIONS.stream().filter(extension -> extension.country().equals(country))
+				.findFirst().orElseThrow();
+	}
+
+	private String endpoint(String system) {
+		return system.equals("main") ? "/api/orders" : "/api/extension/" + system + "/orders";
+	}
+
+	private String ordersTable(String system) {
+		if (system.equals("main")) {
+			return "app.orders";
+		}
+		Extension extension = extension(system);
+		return extension.schema() + "." + extension.ordersTable();
+	}
+
+	private String systemType(String system, String layer, String suffix) {
+		return system.equals("main") ? "com.example.demo." + layer + "." + suffix
+				: extension(system).type(layer, suffix);
 	}
 
 	private String prefix(String system) {
-		return system.equals("main") ? "" : "EXT_";
+		return switch (system) {
+			case "main" -> "";
+			case "kz" -> "EXT_";
+			case "az" -> "AZ_";
+			default -> throw new IllegalArgumentException("Unknown system: " + system);
+		};
+	}
+
+	private record Extension(String country, String classPrefix, String schema,
+			String ordersTable, String historyTable, boolean enabled) {
+		String type(String layer, String suffix) {
+			return "com.example.extension." + country + "." + layer + "." + classPrefix + suffix;
+		}
 	}
 
 	private record OrderLocation(UUID id, String location) {}

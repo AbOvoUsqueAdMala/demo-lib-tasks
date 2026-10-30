@@ -30,7 +30,10 @@ db-scheduler:
 orders:
   base-url: ${ORDERS_BASE_URL:http://localhost:8081}
   extension:
-    base-url: ${EXTENSION_ORDERS_BASE_URL:http://localhost:8081}
+    kz:
+      base-url: ${KZ_ORDERS_BASE_URL:${EXTENSION_ORDERS_BASE_URL:http://localhost:8081}}
+    az:
+      base-url: ${AZ_ORDERS_BASE_URL:http://localhost:8081}
   retry-delay: ${ORDER_RETRY_DELAY:2s}
   max-retries: ${ORDER_MAX_RETRIES:5}
 

@@ -16,10 +16,12 @@
         <java.version>21</java.version>
         <db-scheduler.version>16.12.0</db-scheduler.version>
         <wiremock.version>3.13.1</wiremock.version>
-        <extension.expected>false</extension.expected>
+        <extension.kz.expected>false</extension.kz.expected>
+        <extension.az.expected>false</extension.az.expected>
     </properties>
     <modules>
-        <module>orders-extension</module>
+        <module>orders-extension-kz</module>
+        <module>orders-extension-az</module>
         <module>demo-app</module>
     </modules>
     <dependencyManagement>
@@ -31,7 +33,12 @@
             </dependency>
             <dependency>
                 <groupId>com.example</groupId>
-                <artifactId>orders-extension</artifactId>
+                <artifactId>orders-extension-kz</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.example</groupId>
+                <artifactId>orders-extension-az</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
@@ -58,7 +65,8 @@
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <configuration>
                         <systemPropertyVariables>
-                            <extension.expected>${extension.expected}</extension.expected>
+                            <extension.kz.expected>${extension.kz.expected}</extension.kz.expected>
+                            <extension.az.expected>${extension.az.expected}</extension.az.expected>
                         </systemPropertyVariables>
                     </configuration>
                     <executions>
@@ -72,8 +80,12 @@
     </build>
     <profiles>
         <profile>
-            <id>extension</id>
-            <properties><extension.expected>true</extension.expected></properties>
+            <id>extension-kz</id>
+            <properties><extension.kz.expected>true</extension.kz.expected></properties>
+        </profile>
+        <profile>
+            <id>extension-az</id>
+            <properties><extension.az.expected>true</extension.az.expected></properties>
         </profile>
     </profiles>
 </project>

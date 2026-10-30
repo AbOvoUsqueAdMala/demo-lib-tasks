@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/az/source/orders/[^/]+"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "id": "{{request.pathSegments.[3]}}",
+      "description": "Order from az",
+      "amount": 100
+    },
+    "transformers": [
+      "response-template"
+    ]
+  }
+}
