@@ -16,14 +16,20 @@
         <java.version>21</java.version>
         <db-scheduler.version>16.12.0</db-scheduler.version>
         <wiremock.version>3.13.1</wiremock.version>
-        <orders-extension-kz.version>1.0.0-SNAPSHOT</orders-extension-kz.version>
-        <orders-extension-az.version>1.0.0-SNAPSHOT</orders-extension-az.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <orders-extension-kz.version>2.0.0-SNAPSHOT</orders-extension-kz.version>
+        <orders-extension-az.version>2.0.0-SNAPSHOT</orders-extension-az.version>
     </properties>
     <modules>
+        <module>orders-application-api</module>
         <module>demo-app</module>
     </modules>
     <dependencyManagement>
         <dependencies>
+            <dependency><groupId>com.example</groupId><artifactId>orders-application-api</artifactId><version>${project.version}</version></dependency>
+            <dependency><groupId>com.example</groupId><artifactId>demo-kz-adapter</artifactId><version>${project.version}</version></dependency>
+            <dependency><groupId>com.example</groupId><artifactId>demo-az-adapter</artifactId><version>${project.version}</version></dependency>
+            <dependency><groupId>org.mapstruct</groupId><artifactId>mapstruct</artifactId><version>${mapstruct.version}</version></dependency>
             <dependency>
                 <groupId>com.github.kagkarlsson</groupId>
                 <artifactId>db-scheduler-spring-boot-starter</artifactId>
@@ -55,6 +61,8 @@
                                 <artifactId>lombok</artifactId>
                                 <version>${lombok.version}</version>
                             </path>
+                            <path><groupId>org.mapstruct</groupId><artifactId>mapstruct-processor</artifactId><version>${mapstruct.version}</version></path>
+                            <path><groupId>org.projectlombok</groupId><artifactId>lombok-mapstruct-binding</artifactId><version>0.2.0</version></path>
                         </annotationProcessorPaths>
                     </configuration>
                 </plugin>
@@ -70,4 +78,14 @@
             </plugins>
         </pluginManagement>
     </build>
+    <profiles>
+        <profile>
+            <id>extension-kz</id>
+            <modules><module>demo-kz-adapter</module></modules>
+        </profile>
+        <profile>
+            <id>extension-az</id>
+            <modules><module>demo-az-adapter</module></modules>
+        </profile>
+    </profiles>
 </project>

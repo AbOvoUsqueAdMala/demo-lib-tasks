@@ -1,4 +1,4 @@
-name: Verify all distributions
+name: Verify adapters and independent libraries
 
 on:
   push:

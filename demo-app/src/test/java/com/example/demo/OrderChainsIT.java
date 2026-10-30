@@ -12,8 +12,12 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.example.demo.model.dto.OrderRequest;
+import com.example.demo.model.dto.OrderResponse;
 import com.example.demo.model.dto.OrderView;
+import com.example.demo.service.OrderApplicationService;
 import com.example.demo.tasks.OrderStep;
+import com.example.orders.api.service.OrderProcessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.task.Task;
@@ -28,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipFile;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,10 +44,12 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.ClassUtils;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -87,6 +94,10 @@ class OrderChainsIT {
 	@Test
 	void dependenciesControlClassesHandlersMigrationsAndPackagedJar() throws Exception {
 		try (var context = start()) {
+			assertThat(context.getBeansWithAnnotation(RestController.class).values())
+					.allMatch(controller -> controller.getClass().getPackageName()
+							.equals("com.example.demo.controller")).hasSize(1);
+			assertThat(context.getBeansOfType(OrderProcessor.class)).hasSize(systems().size());
 			assertThat(context.getBeansOfType(Scheduler.class)).hasSize(1);
 			var tasks = context.getBeansOfType(Task.class).values();
 			assertThat(tasks).hasSize(systems().size() * 3);
@@ -94,12 +105,132 @@ class OrderChainsIT {
 			JdbcTemplate database = context.getBean(JdbcTemplate.class);
 			assertThat(database.queryForObject(
 					"SELECT count(*) FROM app.app_schema_history WHERE success", Integer.class))
-					.isEqualTo(3);
+					.isEqualTo(4);
 			for (Extension extension : EXTENSIONS) {
 				assertExtensionConfiguration(context, extension);
 			}
 		}
 		assertPackagedExtensions();
+	}
+
+	@Test
+	void adaptersMapDifferentLibraryModelsAndKeepHostFields() {
+		try (var context = start()) {
+			RestClient client = client(context);
+			for (String system : systems()) {
+				var request = new OrderRequest("Mapped description", "CLIENT-42", "Internal note");
+				var response = client.post().uri("/api/orders?target=" + system).body(request)
+						.retrieve().toEntity(OrderResponse.class);
+				assertThat(response.getStatusCode().value()).isEqualTo(202);
+				OrderResponse created = response.getBody();
+				var location = new OrderLocation(created.id(),
+						response.getHeaders().getLocation().toString());
+				awaitSent(client, location);
+				OrderResponse completed = client.get().uri(location.location())
+						.retrieve().body(OrderResponse.class);
+				assertThat(completed.description()).isEqualTo(request.description());
+				assertThat(completed.customerReference()).isEqualTo(request.customerReference());
+				assertThat(completed.internalComment()).isEqualTo(request.internalComment());
+				assertThat(completed.target()).isEqualTo(system);
+				var registrations = WIREMOCK.findAll(postRequestedFor(
+						urlEqualTo("/" + system + "/source/orders")));
+				assertThat(registrations).hasSize(1);
+				assertThat(registrations.getFirst().getBodyAsString())
+						.contains("Mapped description")
+						.doesNotContain("CLIENT-42", "Internal note", "customerReference", "internalComment");
+			}
+		}
+	}
+
+	@Test
+	void hostSubmissionOrderAndFirstTaskRollBackTogether() {
+		try (var context = start("--db-scheduler.polling-interval=1h")) {
+			context.getBean(Scheduler.class).stop();
+			var transaction = new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
+			for (String system : systems()) {
+				transaction.executeWithoutResult(status -> {
+					context.getBean(OrderApplicationService.class).create(system,
+							new OrderRequest("Atomic submission", "CLIENT-42", "Internal note"));
+					status.setRollbackOnly();
+				});
+				assertThat(count(context, "app.order_submissions")).isZero();
+				assertThat(count(context, ordersTable(system))).isZero();
+				assertThat(count(context, "app.scheduled_tasks")).isZero();
+			}
+		}
+	}
+
+	@Test
+	void unavailableProcessorDoesNotSaveOrScheduleAnything() {
+		try (var context = start()) {
+			assertThat(client(context).post().uri("/api/orders?target=missing")
+					.body(new OrderRequest("Unavailable", null, null)).<Integer>exchange(
+							(request, response) -> response.getStatusCode().value())).isEqualTo(404);
+			assertThat(count(context, "app.order_submissions")).isZero();
+			assertThat(count(context, "app.scheduled_tasks")).isZero();
+		}
+	}
+
+	@Test
+	void restartPreservesRoutingAndFieldsOwnedByHost() {
+		List<OrderLocation> orders = new ArrayList<>();
+		try (var context = start("--db-scheduler.polling-interval=1h")) {
+			context.getBean(Scheduler.class).stop();
+			for (String system : systems()) {
+				var response = client(context).post().uri("/api/orders?target=" + system)
+						.body(new OrderRequest("Restart order", "CLIENT-42", "Internal note"))
+						.retrieve().toEntity(OrderResponse.class);
+				orders.add(new OrderLocation(response.getBody().id(),
+						response.getHeaders().getLocation().toString()));
+			}
+		}
+		try (var context = start()) {
+			for (OrderLocation order : orders) {
+				// A restarted web server has a different port; persisted routing uses the UUID.
+				String path = "/api/orders/" + order.id();
+				awaitSent(client(context), new OrderLocation(order.id(), path));
+				OrderResponse restored = client(context).get().uri(path)
+						.retrieve().body(OrderResponse.class);
+				assertThat(restored.customerReference()).isEqualTo("CLIENT-42");
+				assertThat(restored.internalComment()).isEqualTo("Internal note");
+			}
+		}
+	}
+
+	@Test
+	void upgradePreservesExistingOrdersAndPendingTasks() {
+		Flyway.configure().dataSource(
+				POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+				.schemas("app").defaultSchema("app").table("app_schema_history")
+				.locations("classpath:db/migration/app").target("2").load().migrate();
+		for (Extension extension : EXTENSIONS.stream().filter(Extension::enabled).toList()) {
+			Flyway.configure().dataSource(
+					POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+					.schemas(extension.schema()).defaultSchema(extension.schema()).table(extension.historyTable())
+					.locations("classpath:orders-extension-" + extension.country() + "/db/migration")
+					.load().migrate();
+		}
+		var database = new JdbcTemplate(new DriverManagerDataSource(
+				POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+		List<OrderLocation> existingOrders = new ArrayList<>();
+		for (String system : systems()) {
+			UUID orderId = UUID.randomUUID();
+			database.update("INSERT INTO " + ordersTable(system)
+					+ " (id, description, status, created_at, updated_at, version) "
+					+ "VALUES (?, 'Existing order', 'NEW', now(), now(), 0)", orderId);
+			database.update("INSERT INTO app.scheduled_tasks "
+					+ "(task_name, task_instance, execution_time, picked, "
+					+ "consecutive_failures, version, priority) "
+					+ "VALUES (?, ?, now(), false, 0, 0, 0)",
+					prefix(system) + "REGISTER_ORDER", orderId.toString());
+			existingOrders.add(new OrderLocation(orderId, endpoint(system) + "/" + orderId));
+		}
+		try (var context = start()) {
+			for (OrderLocation order : existingOrders) {
+				assertThat(awaitSent(client(context), order).description()).isEqualTo("Existing order");
+			}
+			assertThat(count(context, "app.order_submissions")).isZero();
+		}
 	}
 
 	@Test
@@ -387,6 +518,12 @@ class OrderChainsIT {
 
 	private Object invokeState(ConfigurableApplicationContext context, String system,
 			String method, Object... arguments) {
+		if (method.equals("create") && !system.equals("main")) {
+			Class<?> commandType = ClassUtils.resolveClassName(
+					systemType(system, "model.dto", "OrderCommand"), context.getClassLoader());
+			arguments = new Object[] {org.springframework.beans.BeanUtils.instantiateClass(
+					commandType.getDeclaredConstructors()[0], arguments)};
+		}
 		String serviceClass = systemType(system, "service", "OrderStateService");
 		Object service = context.getBean(
 				ClassUtils.resolveClassName(serviceClass, context.getClassLoader()));
@@ -395,8 +532,12 @@ class OrderChainsIT {
 
 	private OrderView stateView(ConfigurableApplicationContext context, String system,
 			String method, Object... arguments) {
+		Object result = invokeState(context, system, method, arguments);
+		UUID orderId = ReflectionTestUtils.invokeMethod(result, "id");
+		OrderProcessor processor = context.getBeansOfType(OrderProcessor.class).values().stream()
+				.filter(candidate -> candidate.code().equals(system)).findFirst().orElseThrow();
 		return context.getBean(ObjectMapper.class)
-				.convertValue(invokeState(context, system, method, arguments), OrderView.class);
+				.convertValue(processor.get(orderId), OrderView.class);
 	}
 
 	private Class<?> stepClass(ConfigurableApplicationContext context, String system) {
@@ -428,6 +569,9 @@ class OrderChainsIT {
 				assertThat(libraries.stream().anyMatch(name -> name.startsWith(
 						"BOOT-INF/lib/orders-extension-" + extension.country() + "-")))
 						.as("Packaged extension %s", extension.country()).isEqualTo(extension.enabled());
+				assertThat(libraries.stream().anyMatch(name -> name.startsWith(
+						"BOOT-INF/lib/demo-" + extension.country() + "-adapter-")))
+						.as("Packaged adapter %s", extension.country()).isEqualTo(extension.enabled());
 			}
 			assertThat(libraries).noneMatch(name -> name.contains("wiremock"));
 		}
