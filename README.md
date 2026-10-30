@@ -33,7 +33,7 @@ git clone https://github.com/AbOvoUsqueAdMala/orders-extension-az.git
 | `client-AZ` | Только AZ, обычная Maven-зависимость | `mvn clean verify` |
 | `build-with-maven-profiles` | Выбор через Maven-профили | См. README этой ветки |
 
-Текущая ветка: **`master`**, состав: **KZ и AZ**.
+Текущая ветка: **`client-AZ`**, состав: **только AZ**.
 В `pom.xml` и `demo-app/pom.xml` этой ветки нет Maven-профилей расширений.
 Библиотеки подключены в обычной секции `<dependencies>` модуля `demo-app`,
 версии управляются родительским POM. Флаг `-P` не требуется.
@@ -50,7 +50,7 @@ mvn "-Pextension-kz,extension-az" clean verify
 
 Соответственно собираются приложение без расширений, только с KZ, только с AZ
 или с обеими библиотеками. Перед сборкой установите выбранные библиотеки.
-Для возврата к текущему варианту: `git switch master`.
+Для возврата к текущему варианту: `git switch client-AZ`.
 
 Клиентские ветки созданы от `master`, но намеренно имеют другой состав POM.
 При последующих слияниях проверяйте зависимости, тестовые свойства
@@ -65,7 +65,6 @@ mvn "-Pextension-kz,extension-az" clean verify
 Из каталога `demo-project` установите библиотеки текущей ветки:
 
 ```shell
-mvn -f ../orders-extension-kz/pom.xml clean install
 mvn -f ../orders-extension-az/pom.xml clean install
 mvn clean verify
 docker compose up -d --wait
@@ -89,7 +88,6 @@ WireMock читает маппинги из `wiremock/mappings`.
 Например, полная пересборка состава этой ветки:
 
 ```shell
-mvn -f ../orders-extension-kz/pom.xml clean install
 mvn -f ../orders-extension-az/pom.xml clean install
 mvn clean verify
 ```

@@ -9,12 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Checkout KZ library
-        uses: actions/checkout@v4
-        with:
-          repository: AbOvoUsqueAdMala/orders-extension-kz
-          ref: main
-          path: .build/libraries/orders-extension-kz
       - name: Checkout AZ library
         uses: actions/checkout@v4
         with:
@@ -28,7 +22,6 @@ jobs:
           cache: maven
       - name: Install independent libraries
         run: |
-          mvn -B -ntp -f .build/libraries/orders-extension-kz/pom.xml install -DskipTests
           mvn -B -ntp -f .build/libraries/orders-extension-az/pom.xml install -DskipTests
       - name: Build and run PostgreSQL integration tests
         run: mvn -B -ntp clean verify
