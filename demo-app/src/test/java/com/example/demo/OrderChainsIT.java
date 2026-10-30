@@ -85,7 +85,7 @@ class OrderChainsIT {
 	}
 
 	@Test
-	void profilesControlClassesHandlersMigrationsAndPackagedJar() throws Exception {
+	void dependenciesControlClassesHandlersMigrationsAndPackagedJar() throws Exception {
 		try (var context = start()) {
 			assertThat(context.getBeansOfType(Scheduler.class)).hasSize(1);
 			var tasks = context.getBeansOfType(Task.class).values();

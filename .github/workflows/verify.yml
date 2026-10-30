@@ -1,4 +1,4 @@
-name: Verify all distributions
+name: Verify direct dependencies
 
 on:
   push:
@@ -7,18 +7,6 @@ on:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - distribution: base
-            maven-options: ""
-          - distribution: kz
-            maven-options: "-Pextension-kz"
-          - distribution: az
-            maven-options: "-Pextension-az"
-          - distribution: kz-az
-            maven-options: "-Pextension-kz,extension-az"
-    name: ${{ matrix.distribution }}
     steps:
       - uses: actions/checkout@v4
       - name: Checkout KZ library
@@ -43,10 +31,10 @@ jobs:
           mvn -B -ntp -f .build/libraries/orders-extension-kz/pom.xml install -DskipTests
           mvn -B -ntp -f .build/libraries/orders-extension-az/pom.xml install -DskipTests
       - name: Build and run PostgreSQL integration tests
-        run: mvn -B -ntp ${{ matrix.maven-options }} clean verify
+        run: mvn -B -ntp clean verify
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reports-${{ matrix.distribution }}
+          name: reports
           path: demo-app/target/failsafe-reports/
