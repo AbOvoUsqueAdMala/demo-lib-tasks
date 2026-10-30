@@ -17,9 +17,8 @@
         <db-scheduler.version>16.12.0</db-scheduler.version>
         <wiremock.version>3.13.1</wiremock.version>
         <extension.kz.expected>true</extension.kz.expected>
-        <extension.az.expected>true</extension.az.expected>
+        <extension.az.expected>false</extension.az.expected>
         <orders-extension-kz.version>1.0.0-SNAPSHOT</orders-extension-kz.version>
-        <orders-extension-az.version>1.0.0-SNAPSHOT</orders-extension-az.version>
     </properties>
     <modules>
         <module>demo-app</module>
@@ -35,11 +34,6 @@
                 <groupId>com.example</groupId>
                 <artifactId>orders-extension-kz</artifactId>
                 <version>${orders-extension-kz.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.example</groupId>
-                <artifactId>orders-extension-az</artifactId>
-                <version>${orders-extension-az.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
