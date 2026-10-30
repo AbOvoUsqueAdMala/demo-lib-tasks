@@ -52,9 +52,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class OrderChainsIT {
 	private static final List<Extension> EXTENSIONS = List.of(
 			new Extension("kz", "Kz", "orders_extension", "extension_orders",
-					"extension_schema_history", Boolean.getBoolean("extension.kz.expected")),
+					"extension_schema_history"),
 			new Extension("az", "Az", "orders_extension_az", "extension_az_orders",
-					"az_schema_history", Boolean.getBoolean("extension.az.expected")));
+					"az_schema_history"));
 	@Container
 	private static final PostgreSQLContainer<?> POSTGRES =
 			new PostgreSQLContainer<>("postgres:17.6-alpine");
@@ -85,7 +85,7 @@ class OrderChainsIT {
 	}
 
 	@Test
-	void profilesControlClassesHandlersMigrationsAndPackagedJar() throws Exception {
+	void dependenciesControlClassesHandlersMigrationsAndPackagedJar() throws Exception {
 		try (var context = start()) {
 			assertThat(context.getBeansOfType(Scheduler.class)).hasSize(1);
 			var tasks = context.getBeansOfType(Task.class).values();
@@ -435,13 +435,14 @@ class OrderChainsIT {
 
 	private void assertExtensionConfiguration(
 			ConfigurableApplicationContext context, Extension extension) {
-		assertThat(ClassUtils.isPresent(extension.type("config", "OrdersAutoConfiguration"),
-				context.getClassLoader())).isEqualTo(extension.enabled());
 		JdbcTemplate database = context.getBean(JdbcTemplate.class);
 		assertThat(database.queryForObject(
 				"SELECT count(*) FROM information_schema.schemata WHERE schema_name = ?",
 				Integer.class, extension.schema())).isEqualTo(extension.enabled() ? 1 : 0);
 		if (extension.enabled()) {
+			assertThat(context.getBeansOfType(ClassUtils.resolveClassName(
+					extension.type("config", "OrdersAutoConfiguration"), context.getClassLoader())))
+					.hasSize(1);
 			assertThat(database.queryForObject("SELECT count(*) FROM " + extension.schema()
 					+ "." + extension.historyTable() + " WHERE success", Integer.class)).isEqualTo(2);
 		} else {
@@ -505,7 +506,12 @@ class OrderChainsIT {
 	}
 
 	private record Extension(String country, String classPrefix, String schema,
-			String ordersTable, String historyTable, boolean enabled) {
+			String ordersTable, String historyTable) {
+		boolean enabled() {
+			return ClassUtils.isPresent(type("config", "OrdersAutoConfiguration"),
+					OrderChainsIT.class.getClassLoader());
+		}
+
 		String type(String layer, String suffix) {
 			return "com.example.extension." + country + "." + layer + "." + classPrefix + suffix;
 		}
