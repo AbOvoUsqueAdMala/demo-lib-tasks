@@ -22,8 +22,6 @@
         <orders-extension-az.version>1.0.0-SNAPSHOT</orders-extension-az.version>
     </properties>
     <modules>
-        <module>orders-extension-kz</module>
-        <module>orders-extension-az</module>
         <module>demo-app</module>
     </modules>
     <dependencyManagement>

@@ -1,6 +1,0 @@
-[submodule "orders-extension-kz"]
-	path = orders-extension-kz
-	url = https://github.com/AbOvoUsqueAdMala/orders-extension-kz.git
-[submodule "orders-extension-az"]
-	path = orders-extension-az
-	url = https://github.com/AbOvoUsqueAdMala/orders-extension-az.git

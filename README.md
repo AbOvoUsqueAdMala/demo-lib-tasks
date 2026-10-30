@@ -1,57 +1,52 @@
-# Асинхронные цепочки заказов и Maven-расширения KZ/AZ
+# Асинхронные цепочки заказов и отдельные библиотеки KZ/AZ
 
-Демонстрационный проект на Java 21, Spring Boot 3.5.16 и db-scheduler 16.12.0.
-Очередь, блокировки задач, пул исполнителей, heartbeat, восстановление и backoff
-предоставляет db-scheduler со Spring Boot Starter. Собственных executor, очередей,
-планировщиков и фоновых relay-процессов нет.
+Демо на Java 21, Spring Boot 3.5.16 и db-scheduler 16.12.0.
+Очередь, многопоточность, heartbeat, повторы и восстановление предоставляет
+db-scheduler со Spring Boot Starter. Собственной инфраструктуры очередей нет.
 
-## Репозитории и получение исходников
+## Три независимых проекта
 
-Библиотеки вынесены в самостоятельные публичные репозитории:
+Исходники находятся в отдельных Git-репозиториях:
 
+- [Демо-приложение](https://github.com/AbOvoUsqueAdMala/demo-lib-tasks)
 - [orders-extension-kz](https://github.com/AbOvoUsqueAdMala/orders-extension-kz)
 - [orders-extension-az](https://github.com/AbOvoUsqueAdMala/orders-extension-az)
 
-Демо фиксирует их версии исходников через Git submodules. Клонируйте вместе с ними:
+Разместите checkout рядом в общей рабочей папке. Она сама не является Git-репозиторием:
 
 ```shell
-git clone --recurse-submodules https://github.com/AbOvoUsqueAdMala/demo-lib-tasks.git
-cd demo-lib-tasks
+git clone https://github.com/AbOvoUsqueAdMala/demo-lib-tasks.git demo-project
+git clone https://github.com/AbOvoUsqueAdMala/orders-extension-kz.git
+git clone https://github.com/AbOvoUsqueAdMala/orders-extension-az.git
 ```
 
-Для уже существующего checkout:
+У каждого проекта своя `.git`, история, POM и сборка. В демо нет submodules
+и исходников библиотек. Его Maven reactor содержит родительский POM и модуль
+`demo-app`; KZ и AZ подключаются обычными внешними зависимостями.
+
+## Подготовка библиотек
+
+Нужны JDK 21, Maven 3.6.3+ и Docker для интеграционных тестов.
+Из общей рабочей папки установите нужные библиотеки в локальный Maven:
 
 ```shell
-git submodule update --init --recursive
+mvn -f orders-extension-kz/pom.xml clean install
+mvn -f orders-extension-az/pom.xml clean install
 ```
 
-Если эти каталоги раньше содержали обычные файлы, сохраните или закоммитьте свои
-локальные изменения перед обновлением структуры репозитория.
+Для сборки без расширений этот шаг не нужен. Для KZ достаточно установить KZ,
+для AZ — AZ, для обоих вариантов установите обе библиотеки. Установка помещает
+JAR и POM в `.m2` текущего пользователя. Вместо локальной установки можно
+использовать Maven-репозиторий вашей организации с опубликованными артефактами.
 
-Отдельный Git-репозиторий и Maven-модуль — разные понятия: в демо обе библиотеки
-остаются модулями общего Maven reactor, хотя исходники и история принадлежат
-разным репозиториям. Поэтому прежние команды сборки и подсветка в IDEA сохраняются.
-В другом проекте достаточно Maven-зависимостей; включать submodules не обязательно.
+## Запуск и выбор библиотек
 
-## Запуск
-
-Нужны JDK 21, Maven 3.6.3+ и работающий Docker с Linux-контейнерами.
-Команды выполняются из корня проекта.
+Следующие команды выполняются из каталога демо:
 
 ```shell
+cd demo-project
 docker compose up -d --wait
-mvn clean verify
-java -jar demo-app/target/demo-app-1.0.0-SNAPSHOT.jar
 ```
-
-PostgreSQL доступен на `localhost:5432`, WireMock — на `localhost:8081`,
-приложение — на `localhost:8080`. База, пользователь и пароль для локального демо:
-`demo`. Compose сохраняет PostgreSQL в именованном томе. WireMock использует
-маппинги из каталога `wiremock/mappings`.
-
-## Выбор библиотек
-
-Профили независимы; включайте нужные при сборке из корня проекта:
 
 | Состав приложения | Команда |
 |---|---|
@@ -60,92 +55,73 @@ PostgreSQL доступен на `localhost:5432`, WireMock — на `localhost:
 | Только AZ | `mvn -Pextension-az clean verify` |
 | KZ и AZ вместе | `mvn "-Pextension-kz,extension-az" clean verify` |
 
-Для быстрой сборки без тестов замените `verify` на `package -DskipTests`, например:
+Профили выбирают зависимости, которые попадут в JAR. Они не собирают соседние
+проекты. Без установленного или опубликованного артефакта выбранной библиотеки
+сборка завершится ошибкой разрешения зависимости.
+
+Для быстрой сборки без тестов:
 
 ```shell
 mvn "-Pextension-kz,extension-az" clean package -DskipTests
 ```
 
-После любого варианта сборки запускайте полученный JAR одной командой:
+После сборки:
 
 ```shell
 java -jar demo-app/target/demo-app-1.0.0-SNAPSHOT.jar
 ```
 
-Выбор фиксируется при сборке: Maven-профили добавляют зависимости в `demo-app`.
-Spring-профили при запуске не могут подключить отсутствующую в JAR библиотеку.
-Все три модуля собираются в reactor и видны IDE всегда; в итоговый JAR приложения
-попадают только выбранные расширения. Основная цепочка доступна во всех вариантах.
-
-Остановить инфраструктуру с сохранением данных: `docker compose down`.
-Testcontainers использует отдельную временную базу и не затрагивает базу Compose.
+PostgreSQL доступен на `localhost:5432`, WireMock — на `localhost:8081`,
+приложение — на `localhost:8080`. Локальная БД, пользователь и пароль — `demo`.
+Compose сохраняет PostgreSQL в именованном томе; остановка с сохранением данных:
+`docker compose down`. Testcontainers использует отдельную временную базу.
+WireMock читает маппинги из `wiremock/mappings`.
 
 ## Пересборка после изменений в библиотеках
 
-Все команды ниже выполняются из корня проекта, где находится общий `pom.xml`.
-Перед пересборкой остановите запущенное приложение, затем выберите нужный состав
-библиотек — он не зависит от того, в какой из них вы изменили код.
-
-Самый простой вариант — собрать весь проект. Например, после изменений в KZ
-или AZ для приложения с обеими библиотеками:
+Из каталога `demo-project`, если изменён KZ, а приложение использует обе библиотеки:
 
 ```shell
+mvn -f ../orders-extension-kz/pom.xml clean install
 mvn "-Pextension-kz,extension-az" clean verify
 ```
 
-Maven заново соберёт все три модуля и включит актуальные JAR выбранных библиотек
-в приложение. `clean` удаляет предыдущие результаты сборки, а `verify` выполняет
-сборку и проверки, включая интеграционные тесты. При сборке всего проекта `-am`
-не требуется; отдельно устанавливать библиотеки в локальный репозиторий `.m2`
-тоже не нужно — Maven использует артефакты из текущей сборки.
-
-Если нужно выбрать только приложение и необходимые ему модули, используйте
-`-pl demo-app -am`:
-
-- `-pl demo-app` (`--projects`) выбирает модуль приложения для сборки.
-- `-am` (`--also-make`, **also make**) добавляет к сборке модули этого же проекта,
-  от которых зависит выбранное приложение, включая их зависимости в reactor.
-- Профили определяют зависимости: `-am` сам не включает KZ или AZ.
-
-| Требуемый состав приложения | Пересборка приложения и его зависимостей |
-|---|---|
-| Без библиотек | `mvn -pl demo-app -am clean verify` |
-| Только KZ | `mvn -pl demo-app -am -Pextension-kz clean verify` |
-| Только AZ | `mvn -pl demo-app -am -Pextension-az clean verify` |
-| KZ и AZ вместе | `mvn -pl demo-app -am "-Pextension-kz,extension-az" clean verify` |
-
-Например, если изменён KZ, а приложение должно по-прежнему содержать обе библиотеки,
-используйте последнюю команду таблицы. Maven пересоберёт обе зависимости и приложение.
-Для быстрой сборки без тестов:
+Если изменены обе библиотеки:
 
 ```shell
-mvn -pl demo-app -am "-Pextension-kz,extension-az" clean package -DskipTests
+mvn -f ../orders-extension-kz/pom.xml clean install
+mvn -f ../orders-extension-az/pom.xml clean install
+mvn "-Pextension-kz,extension-az" clean verify
 ```
 
-При использовании `-pl demo-app` без `-am` библиотечные модули не собираются.
-Maven разрешает их зависимости через локальный и настроенные удалённые репозитории.
-Если там находится прежний JAR KZ или AZ, в приложение попадёт его код, а изменения
-исходников библиотеки в рабочем каталоге не будут учтены. Если подходящего артефакта
-нет, сборка завершится ошибкой разрешения зависимости.
+Для приложения только с AZ:
 
-Версии библиотек автоматически не увеличиваются: каждая задаёт
-`1.0.0-SNAPSHOT` в собственном `pom.xml` с родителем Spring Boot.
-В демо версии зависимостей задаются отдельно свойствами
+```shell
+mvn -f ../orders-extension-az/pom.xml clean install
+mvn -Pextension-az clean verify
+```
+
+Выбирайте профили по требуемому составу приложения, а не по тому, какую библиотеку
+вы изменили. Без повторного `install` демо может получить прежний JAR из `.m2`.
+Остановите приложение перед пересборкой и запустите его заново после неё:
+работающий процесс автоматически не переключается на новый код.
+
+### Что делают Maven-флаги
+
+- `-P` (`--activate-profiles`) включает Maven-профили, например `extension-kz`.
+- `-pl demo-app` (`--projects`) выбирает модуль приложения.
+- `-am` (`--also-make`, **also make**) добавляет зависимости выбранного модуля,
+  только если они входят в текущий Maven reactor.
+
+Например, `mvn -pl demo-app -am -Pextension-kz clean verify` соберёт приложение
+и его родительский проект, но не соседний репозиторий KZ. Его нужно предварительно
+собрать через `mvn -f ../orders-extension-kz/pom.xml clean install`.
+Для обычной сборки демо из его корня `-pl` и `-am` не требуются.
+
+Версии библиотек задаются независимо в их POM и сейчас равны `1.0.0-SNAPSHOT`.
+Они не увеличиваются автоматически. В демо версии зависимостей задают свойства
 `orders-extension-kz.version` и `orders-extension-az.version`.
-Изменение исходников и пересборка обновляют содержимое JAR с той же версией.
-При выпуске новой версии библиотеки обновите и соответствующее свойство демо.
-
-Если библиотека находится в отдельном checkout вне текущего reactor, сначала
-выполните в её каталоге `mvn clean install`, затем пересоберите приложение.
-Один `-am` не собирает исходники из произвольных внешних Git-репозиториев.
-
-После успешной сборки заново запустите приложение:
-
-```shell
-java -jar demo-app/target/demo-app-1.0.0-SNAPSHOT.jar
-```
-
-Уже работающий процесс автоматически не переключается на пересобранные библиотеки.
+При выпуске новой версии библиотеки обновите соответствующее свойство демо.
 
 ## REST API
 
@@ -199,46 +175,29 @@ Invoke-RestMethod "http://localhost:8080/api/extension/kz/orders/$($kzOrder.id)"
 Invoke-RestMethod "http://localhost:8080/api/extension/az/orders/$($azOrder.id)"
 ```
 
-## Структура
+## Структура рабочей папки
 
 ```text
-demo-app/
-  src/main/java/com/example/demo/
-    controller/
-    model/dto/
-    model/entity/
-    repository/
-    service/
-    tasks/
-    config/
-  src/main/resources/db/migration/app/
-  src/test/java/com/example/demo/OrderChainsIT.java
-orders-extension-kz/
-  src/main/java/com/example/extension/kz/
-    controller/
-    model/dto/
-    model/entity/
-    repository/
-    service/
-    tasks/
-    config/
-  src/main/resources/
-    orders-extension-kz/db/migration/
-    META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
-orders-extension-az/
-  src/main/java/com/example/extension/az/
-    controller/
-    model/dto/
-    model/entity/
-    repository/
-    service/
-    tasks/
-    config/
-  src/main/resources/
-    orders-extension-az/db/migration/
-    META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
-wiremock/mappings/
-compose.yml
+workspace/                         # Не Git-репозиторий
+├── demo-project/                  # Репозиторий demo-lib-tasks
+│   ├── .git/
+│   ├── pom.xml
+│   ├── demo-app/
+│   │   ├── src/main/java/com/example/demo/
+│   │   ├── src/main/resources/db/migration/app/
+│   │   └── src/test/java/com/example/demo/OrderChainsIT.java
+│   ├── wiremock/mappings/
+│   └── compose.yml
+├── orders-extension-kz/           # Отдельный репозиторий
+│   ├── .git/
+│   ├── pom.xml
+│   ├── README.md
+│   └── src/
+└── orders-extension-az/           # Отдельный репозиторий
+    ├── .git/
+    ├── pom.xml
+    ├── README.md
+    └── src/
 ```
 
 ## Выполнение и транзакции
@@ -348,24 +307,10 @@ Flyway приложения и выбранных расширений запу�
 
 ## Подключение Maven-библиотек
 
-Профиль `extension-kz` добавляет зависимость `orders-extension-kz` в `demo-app`,
-а `extension-az` — `orders-extension-az`. Библиотеки независимы друг от друга
-и не зависят от приложения или его родительского POM. Каждая собирается отдельно:
-
-```shell
-mvn -f orders-extension-kz/pom.xml clean install
-mvn -f orders-extension-az/pom.xml clean install
-```
-
-Эти команды работают и в независимо клонированных репозиториях. Для установки
-артефактов из общего reactor демо:
-
-```shell
-mvn "-Pextension-kz,extension-az" clean install -DskipTests
-```
-
-В другом совместимом Spring Boot-приложении добавьте нужную зависимость или обе
-после установки библиотек в локальный Maven:
+Профили демо `extension-kz` и `extension-az` добавляют внешние зависимости.
+Библиотеки не зависят от POM демо, не являются его модулями и могут использоваться
+в другом совместимом Spring Boot-приложении. После установки или публикации
+добавьте нужную зависимость либо обе:
 
 ```xml
 <dependency>
@@ -380,49 +325,32 @@ mvn "-Pextension-kz,extension-az" clean install -DskipTests
 </dependency>
 ```
 
-Автоконфигурация импортирует сервисы, контроллер, task beans, JPA Entity и Repository
-библиотеки без `@ComponentScan` в её пакеты и без ручного изменения приложения.
-Нужны PostgreSQL DataSource, JDBC-драйвер PostgreSQL и таблица общего db-scheduler.
-В демо их предоставляет `demo-app`. В другом приложении создайте таблицу своей
-Flyway-миграцией; SQL есть в `docs/scheduled_tasks.sql` каждого репозитория.
-Имя таблицы задаётся общим `db-scheduler.table-name`; отдельный Scheduler
-библиотека не создаёт. JPA, MVC, Flyway и db-scheduler starter приходят транзитивно.
-Минимальные свойства и HTTP-контракты описаны в README каждой библиотеки.
+GitHub хранит исходники, а Maven получает артефакты из Maven-репозитория.
+Для другой машины также выполните `mvn install` библиотек либо опубликуйте их
+через `mvn deploy` в Maven-репозиторий вашей организации.
+Создание GitHub-репозитория само по себе не публикует JAR в Maven Central.
 
-GitHub хранит исходники, а Maven получает зависимости из Maven-репозитория.
-Для сборки на другой машине также выполните `mvn install` библиотек либо
-опубликуйте их JAR и POM через `mvn deploy` в Nexus/Artifactory вашей организации.
-Само создание GitHub-репозитория не публикует артефакт в Maven Central.
+Автоконфигурация регистрирует сервисы, контроллеры, Entity, Repository и task beans.
+Нужны PostgreSQL DataSource, JDBC-драйвер и одна общая таблица db-scheduler.
+В демо их предоставляет `demo-app`; в другом приложении создайте таблицу своей
+Flyway-миграцией. SQL есть в `docs/scheduled_tasks.sql` каждого репозитория.
+Имя очереди задаётся через `db-scheduler.table-name`; отдельные Scheduler
+библиотеки не создают. Остальные требования описаны в README KZ и AZ.
 
-Изменения библиотек коммитятся и отправляются в их собственные репозитории.
-После этого в демо зафиксируйте новые указатели submodules:
-
-```shell
-git -C orders-extension-kz add .
-git -C orders-extension-kz commit -m "Update KZ extension"
-git -C orders-extension-kz push origin HEAD:main
-git add orders-extension-kz
-git commit -m "Update KZ submodule"
-```
-
-Для AZ используйте соответствующий каталог. При получении изменений демо выполните
-`git submodule update --init --recursive`, чтобы взять именно зафиксированные
-коммиты библиотек.
+Правки библиотек коммитятся и отправляются из соответствующего checkout.
+Обновление демо не обновляет их исходники автоматически:
+используйте `git pull` в нужном репозитории, затем `mvn clean install`.
 
 ## IntelliJ IDEA
 
-Открывайте корневой `pom.xml` как Maven-проект. Все три модуля объявлены в общем
-списке `<modules>`, поэтому IDEA импортирует `orders-extension-kz` и
-`orders-extension-az` с зависимостями, подсветкой, автодополнением и навигацией
-независимо от выбранных профилей.
-После изменения POM выполните **View → Tool Windows → Maven → Reload All Maven Projects**
-(в некоторых версиях действие называется **Sync All Maven Projects**).
+Открывайте `demo-project/pom.xml`, `orders-extension-kz/pom.xml` и
+`orders-extension-az/pom.xml` как три отдельных Maven-проекта, каждый в своём окне.
+У них независимые настройки, зависимости, подсветка и сборка.
 
-В **Maven → Profiles** выберите `extension-kz`, `extension-az`, оба флажка
-или снимите оба. Затем обновите Maven-проект. Для редактирования исходников
-расширений включать профили не требуется. При запуске приложения из IDE выбранные
-библиотеки входят в classpath. В отдельном терминале выбор задавайте явно через
-`-Pextension-kz`, `-Pextension-az` или `"-Pextension-kz,extension-az"`.
+В окне демо выберите **Maven → Profiles → extension-kz / extension-az**:
+один профиль, оба или ни одного. После установки обновлённой библиотеки обновите
+Maven-проект демо. IDEA получает её как Maven-зависимость; код библиотеки
+редактируйте в её собственном проекте.
 
 ## Настройки
 
@@ -452,8 +380,8 @@ KZ и AZ используют свойства `orders.extension.kz.base-url` и
 Независимые проверки библиотек (каждая с собственным тестовым приложением):
 
 ```shell
-mvn -f orders-extension-kz/pom.xml clean verify
-mvn -f orders-extension-az/pom.xml clean verify
+mvn -f ../orders-extension-kz/pom.xml clean verify
+mvn -f ../orders-extension-az/pom.xml clean verify
 ```
 
 Проверки приложения во всех сочетаниях зависимостей:
@@ -465,7 +393,8 @@ mvn -Pextension-az clean verify
 mvn "-Pextension-kz,extension-az" clean verify
 ```
 
-Та же матрица из четырёх сборок настроена в GitHub Actions.
+Та же матрица из четырёх сборок настроена в GitHub Actions. CI отдельно получает
+репозитории библиотек и устанавливает их артефакты, затем собирает демо.
 Failsafe запускает `OrderChainsIT` после упаковки JAR. Testcontainers поднимает
 PostgreSQL 17.6; WireMock стартует на случайном порту с теми же маппингами, что Compose.
 Отсутствие Docker является ошибкой проверки: тесты не пропускаются автоматически.
