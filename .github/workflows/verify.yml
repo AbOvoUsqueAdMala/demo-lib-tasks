@@ -1,0 +1,32 @@
+name: Verify both distributions
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - distribution: base
+            maven-options: ""
+          - distribution: extension
+            maven-options: "-Pextension"
+    name: ${{ matrix.distribution }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build and run PostgreSQL integration tests
+        run: mvn -B -ntp ${{ matrix.maven-options }} clean verify
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.distribution }}
+          path: demo-app/target/failsafe-reports/

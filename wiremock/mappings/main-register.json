@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/main/source/orders",
+    "headers": {
+      "Idempotency-Key": {
+        "matches": ".+"
+      }
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "externalId": "{{jsonPath request.body '$.id'}}"
+    },
+    "transformers": [
+      "response-template"
+    ]
+  }
+}
+

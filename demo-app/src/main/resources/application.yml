@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: demo-lib-tasks
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/demo}
+    username: ${DATABASE_USER:demo}
+    password: ${DATABASE_PASSWORD:demo}
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:16}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  mvc:
+    problemdetails:
+      enabled: true
+
+db-scheduler:
+  threads: ${SCHEDULER_THREADS:4}
+  table-name: app.scheduled_tasks
+  polling-interval: 1s
+  heartbeat-interval: 5s
+  missed-heartbeats-limit: 6
+  delay-startup-until-context-ready: true
+  immediate-execution-enabled: false
+  shutdown-max-wait: 15s
+  failure-logger-level: WARN
+  failure-logger-log-stack-trace: false
+
+orders:
+  base-url: ${ORDERS_BASE_URL:http://localhost:8081}
+  extension:
+    base-url: ${EXTENSION_ORDERS_BASE_URL:http://localhost:8081}
+  retry-delay: ${ORDER_RETRY_DELAY:2s}
+  max-retries: ${ORDER_MAX_RETRIES:5}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
